@@ -572,6 +572,24 @@ def create_database(url, encoding='utf8', template=None):
         )
 
         with engine.connect() as connection:
+            # Disconnect all users from the database we are templating from.
+            version = connection.dialect.server_version_info
+            pid_column = (
+                'pid' if (version >= (9, 2)) else 'procpid'
+            )
+            text = '''
+            SELECT pg_terminate_backend(pg_stat_activity.%(pid_column)s)
+            FROM pg_stat_activity
+            WHERE pg_stat_activity.datname = '%(database)s'
+            AND %(pid_column)s <> pg_backend_pid();
+            ''' % {'pid_column': pid_column, 'database': template}
+            connection.execute(text)
+
+            text = "CREATE DATABASE {0} ENCODING '{1}' TEMPLATE {2}".format(
+                quote(engine, database),
+                encoding,
+                quote(engine, template)
+            )
             connection.execute(text)
 
     elif dialect_name == 'mysql':
